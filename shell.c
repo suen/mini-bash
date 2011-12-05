@@ -12,33 +12,46 @@
 #include <ctype.h>
 #include <dirent.h>
 
-/* User define function  */
-char ** parse(char *line);                      /* parseing */
-char ** pipe_parse(char *line);                 /* pipe_parseing        */
-char ** or_parse(char *line);                   /* || parseing          */ 
-char ** and_parse(char *line);                  /* && parseing          */
+#include "variable.c"
+
+void displayPrompt();
+
+char ** parse(char *line);                      /* parse general  */
+char ** parse_pipe(char *line);                 /* parse for pipe       */
+char ** parse_or(char *line);                   /* parse for ||         */ 
+char ** parse_and(char *line);                  /* parse for &&         */
+char ** parse_var(char *line);
+
 int run_command(char *arg[]);                   /* command   */
 int run_pipeCmd(char *arg[]);                   /* run pipe command     */
 int run_orCmd(char *arg[]);                     /* run || command       */
 int run_andCmd(char *arg[]);                    /* run && command       */
+
+
 void redirect_in(char *arg[]);                  /* redirection "<" */
 void redirect_out(char *arg[]);                 /* redirection ">" */
-void redirect_out_add(char *arg[]);             /* redirection ">>" */
-int builtin_func(char *arg[]);                  /* cd, pwd , exit Command */
-void cd_func(char *arg[]);                      /* change dirctory */
-void run_history(char arg[]);                   /* history command */
+void redirect_out_append(char *arg[]);             /* redirection ">>" */
+
+int func_builtin(char *arg[]);                  /* cd, pwd , exit Command */
+void func_cd(char *arg[]);                      /* change dirctory */
+void pwd_func(char *argv[]);                    /* pwd          */
+void func_exit(char *argv[]);                   /* exit         */
+void func_echo(char *argv[]);
+void func_var(char *argv[]);
+
+void history_run(char arg[]);                   /* history command */
 void history_display(void);                      /* history display */
 void set_history(char arg[]);                   /* history command save */
-void pwd_func(char *argv[]);                    /* pwd          */
-void exit_func(char *argv[]);                   /* exit         */
-int back_func(char *arg[]);                     /* &            */
-int pipe_check(char *arg[]);                    /* | check      */
+
+int check_background(char *arg[]);                     /* &            */
+int check_pipe(char *arg[]);                    /* | check      */
+int check_var(char *line);
 
 struct builtcmd {
         char *cmd;
         void (*fptr)(char *arg[]);
-}builtin[6] = 
-{ {"cd", cd_func},{"pwd",pwd_func}, {"exit",exit_func},{NULL,NULL} };
+}builtin[7] = 
+{ {"cd", func_cd},{"pwd",pwd_func}, {"exit",func_exit}, {"var", func_var}, {"echo", func_echo},  {NULL,NULL} };
 
 char history[100][20];                  /* history save command */
 char history_Count;                     /* history Command Count */
@@ -52,6 +65,8 @@ int pArgCnt;                            /* pipe arg Count       */
 int andCnt;                             /* && Count             */
 int orCnt;                              /* || Count             */
 
+Variable ** vars=NULL;
+
 int main(void)
 {
         char line[256];                 /* User Input Save array */
@@ -59,11 +74,13 @@ int main(void)
         char or_line[256];
         char and_line[256];
         char **arglist;
+        
         int i;
 
         while(1)
         {
-                printf("myshell> "); 
+				
+                displayPrompt();
                 fgets(line, 255, stdin);
                 if(line[0]=='\n')
                         continue;
@@ -73,7 +90,7 @@ int main(void)
                 line[strlen(line)-1]='\0';
                 
                 if(line[0] =='!'){
-                        run_history(line);
+                        history_run(line);
                         continue;
                 }
                 
@@ -83,34 +100,36 @@ int main(void)
 
                 set_history(line);
                 
-                if(strcmp(line,"history") == 0)
-                {
+                if(strcmp(line,"history") == 0) {
                         history_display();
+                        continue;
+                } else if(strcmp(line,"variables") == 0) {
+                        variables_display();
                         continue;
                 }
         
         
-                pipe_arglist = pipe_parse(pipe_line);    
-                or_arglist = or_parse(or_line);
-                and_arglist = and_parse(and_line);
+                pipe_arglist = parse_pipe(pipe_line);    
+                or_arglist = parse_or(or_line);
+                and_arglist = parse_and(and_line);
         
                 arglist=parse(line);                    /* command paresing     */
                 
                 
                 if(andCnt >= 2){
-                        if(!builtin_func(and_arglist)){
+                        if(!func_builtin(and_arglist)){
                                 run_andCmd(and_arglist);
                         }
                 }else if(orCnt >= 2){
-                        if(!builtin_func(or_arglist)){
+                        if(!func_builtin(or_arglist)){
                                 run_orCmd(or_arglist);
                         }
                 }else if(pArgCnt == 2 || pArgCnt == 1){
-                        if(!builtin_func(arglist)){
+                        if(!func_builtin(arglist)){
                                 run_command(arglist);
                         }
                 }
-                else if(!builtin_func(pipe_arglist)){
+                else if(!func_builtin(pipe_arglist)){
                         run_pipeCmd(pipe_arglist);
                 }
                 
@@ -127,6 +146,12 @@ int main(void)
                 for(i=0; arglist[i]; i++)
                         arglist[i]=NULL;
         }       
+}
+
+void displayPrompt() {
+	char dir[1024];
+	getcwd(dir, 1024);
+	printf("%s> ", dir); 
 }
 
 char ** parse(char *line)
@@ -149,7 +174,7 @@ char ** parse(char *line)
         return (char **) arg;
 }
 
-char ** pipe_parse(char *line)
+char ** parse_pipe(char *line)
 {
 //  pipe parseing ( | )
         char *token;
@@ -169,7 +194,7 @@ char ** pipe_parse(char *line)
         return (char **) arg_pipe;
 }
 
-char ** or_parse(char *line)
+char ** parse_or(char *line)
 {
 // parseing ( || )
         char *token;
@@ -189,8 +214,7 @@ char ** or_parse(char *line)
         return (char **) arg_or;
 }
         
-char ** and_parse(char *line)
-{
+char ** parse_and(char *line) {
 // parseing     ( && )
         char *token;
         static char *arg_and[80];
@@ -207,6 +231,34 @@ char ** and_parse(char *line)
         }
         arg_and[i]=NULL;
         return (char **) arg_and;
+}
+
+char ** parse_var(char *line) {
+
+	char *atoken;
+	char **tokens=NULL;
+	
+	int i = 0;
+
+	if(line==NULL) return tokens;
+	
+	atoken=strtok(line,"=");
+	
+	while(atoken) {
+		tokens = (char **)realloc(tokens, (i+1) * sizeof(char *));
+		tokens[i] = (char *)malloc(sizeof(char));
+		strcpy(tokens[i++],atoken);
+		
+		atoken=strtok(NULL, "=");
+	}
+	
+	tokens = (char **)realloc(tokens, (i+1) * sizeof(char *));
+	tokens[i] = (char *)malloc(sizeof(char));
+	strcpy(tokens[i],"");
+	return tokens;
+	
+
+	
 }       
 
 
@@ -217,7 +269,7 @@ int run_command(char *arg[])
         int back_flag = 0;
         int pfd[2], pipe_pos;
 
-        back_flag = back_func(arg);
+        back_flag = check_background(arg);
         
         switch(pid = fork()){
                 case -1:
@@ -232,9 +284,9 @@ int run_command(char *arg[])
 
                         redirect_in(arg);
                         redirect_out(arg);
-                        redirect_out_add(arg);
+                        redirect_out_append(arg);
                         
-                        if((pipe_pos=pipe_check(arg)) != 0){
+                        if((pipe_pos=check_pipe(arg)) != 0){
                                 
                                 pipe(pfd);
                                 switch(fork()){
@@ -277,7 +329,7 @@ int run_command(char *arg[])
         return 0;
 }
 
-int run_pipeCmd(char *arg[]) // Âü°í 1¹ø Âü°í 2¹ø 
+int run_pipeCmd(char *arg[]) 
 {
         int i,pid;
         char **arglist;
@@ -410,6 +462,27 @@ int run_andCmd(char *arg[])
         return 0;
 }
 
+int set_var(char *var, char *val) {
+	vars = var_add(vars, var, val);
+	int i;
+	for(i=0; i<vCnt; i++) {
+		printf("%s : %s\n", vars[i]->var, vars[i]->val);
+	}	
+	return 0;
+}
+
+int variables_display() {
+	if(vars==NULL) {
+		 printf("No variables set\n");
+		 return 1;
+	 }
+	int i;
+	for(i=0; i<vCnt; i++) {
+		printf("%s : %s\n", vars[i]->var, vars[i]->val);
+	}
+	return 0;	
+}
+
 
 
 // return value : 0 -- no redirect
@@ -462,7 +535,7 @@ void redirect_out(char *arg[])
         }
 }
 
-void redirect_out_add(char *arg[])
+void redirect_out_append(char *arg[])
 {
 // redirectout(>>) check 
 
@@ -486,7 +559,7 @@ void redirect_out_add(char *arg[])
         }
 }
 
-int builtin_func(char *arg[])
+int func_builtin(char *arg[])
 {
 // builtin Command
         int i;
@@ -501,7 +574,7 @@ int builtin_func(char *arg[])
 }
 
 
-void cd_func(char *arg[]) 
+void func_cd(char *arg[]) 
 {
 // change dirtory
         char* homedir;
@@ -537,12 +610,39 @@ void pwd_func(char *arg[])
         printf("%s\n",path);
 }
 
-void exit_func(char *arg[])
+void func_exit(char *arg[])
 {
         exit(0);
 }
 
-void run_history(char arg[])
+
+void func_echo(char *argv[]) {
+	printf("%s\n", argv[1]);
+	char *value = get_value(vars, argv[1]);
+	if(value!=NULL) {
+		printf("%s=%s\n", argv[1], value);
+	}
+}
+void func_var(char *arg[]) {
+	char ** vars;
+	if(check_var(arg[1])) {
+		vars = parse_var(arg[1]);
+		set_var(vars[0], vars[1]);
+
+		}	
+}
+
+int check_var(char *line) {
+	int i=0, count=0;
+	
+	for(i=0; i<strlen(line); i++) {
+		if(line[i]=='=') count++;
+	}
+	return count;
+}
+
+
+void history_run(char arg[])
 {
 // history cmmand run
         int num;
@@ -573,7 +673,7 @@ void run_history(char arg[])
 
         arglist=parse(temp);
         
-        if(!builtin_func(arglist)){
+        if(!func_builtin(arglist)){
                         run_command(arglist);
         }
 }
@@ -603,7 +703,7 @@ void set_history(char arg[])
         history_Count++;
 }
 
-int back_func(char *arg[])
+int check_background(char *arg[])
 {
 //Background(&)
         int i;
@@ -616,7 +716,7 @@ int back_func(char *arg[])
         return 0;
 }
 
-int pipe_check(char *arg[])
+int check_pipe(char *arg[])
 {
 //  pipe(|) check
         int i;
