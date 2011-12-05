@@ -47,6 +47,8 @@ int check_background(char *arg[]);                     /* &            */
 int check_pipe(char *arg[]);                    /* | check      */
 int check_var(char *line);
 
+void cycle();
+
 struct builtcmd {
         char *cmd;
         void (*fptr)(char *arg[]);
