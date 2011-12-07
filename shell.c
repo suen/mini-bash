@@ -653,18 +653,32 @@ void func_exit(char *arg[]) {
 }
 
 void func_export(char *argv[]) {
+	
+	char ** env;
 	if(check_var(argv[1])>0) {
-		printf("need to export variables\n");
-	} else
-	printf("just a normal variable\n");
+		env = parse_var(argv[1]);
+		
+		setenv(env[0], env[1], 1);
+		printf("%s <- %s\n", env[0], getenv(env[0]));
+	} else {
+		char * value = get_value(vars, argv[1]);
+		if(value!=NULL) {
+			setenv(argv[1], value, 1);
+			printf("%s <- %s\n", argv[1], getenv(argv[1]));
+		}
+	}
+
 }
 
 
 void func_echo(char *argv[]) {
-	printf("%s\n", argv[1]);
+	
 	char *value = get_value(vars, argv[1]);
 	if(value!=NULL) {
 		printf("%s=%s\n", argv[1], value);
+	} else {
+		value = getenv(argv[1]);
+		if(value!=NULL) printf("%s=%s\n", argv[1], value);
 	}
 }
 void func_var(char *arg[]) {
