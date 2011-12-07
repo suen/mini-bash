@@ -26,6 +26,7 @@ char ** parse_seperator(char *line);
 
 int run_command(char *arg[]);                   /* command   */
 int run_pipeCmd(char *arg[]);                   /* run pipe command     */
+int run_spCmd(char *arg[]);
 int run_orCmd(char *arg[]);                     /* run || command       */
 int run_andCmd(char *arg[]);                    /* run && command       */
 
@@ -66,10 +67,11 @@ extern char **environ;
 char **pipe_arglist;                    /* pipe parseing list   */
 char **or_arglist;                      /* || parseing list     */
 char **and_arglist;                     /* && parseing list     */
+char **sp_arglist;
 int pArgCnt;                            /* pipe arg Count       */
 int andCnt;                             /* && Count             */
 int orCnt;                              /* || Count             */
-int spCnt=0;
+int spCnt;
 
 Variable ** vars=NULL;
 
@@ -77,14 +79,15 @@ int main(void)
 {
         char line[256];                 /* User Input Save array */
         char pipe_line[256];
+        char sp_line[256];
         char or_line[256];
         char and_line[256];
         char **arglist;
         
+        
         int i;
 
-        while(1)
-        {
+        while(1) {
 				
                 displayPrompt();
                 fgets(line, 255, stdin);
@@ -101,6 +104,7 @@ int main(void)
                 }
                 
                 strcpy(pipe_line,line);
+                strcpy(sp_line, line);
                 strcpy(or_line,line);
                 strcpy(and_line,line);
 
@@ -115,12 +119,19 @@ int main(void)
                 }
         
         
-                pipe_arglist = parse_pipe(pipe_line);    
+                pipe_arglist = parse_pipe(pipe_line);
+                sp_arglist = parse_seperator(sp_line);    
                 or_arglist = parse_or(or_line);
                 and_arglist = parse_and(and_line);
         
                 arglist=parse(line);                    /* command paresing     */
                 
+                if(spCnt >=2) {
+                        if(!func_builtin(sp_arglist)){
+                                run_spCmd(sp_arglist);
+                                continue;
+                        }					
+				}
                 if(andCnt >= 2){
                         if(!func_builtin(and_arglist)){
                                 run_andCmd(and_arglist);
@@ -264,6 +275,7 @@ char ** parse_seperator(char *line) {
 	char **tokens=NULL;
 	
 	int i = 0;
+	spCnt = 0;
 
 	if(line==NULL) return tokens;
 	
@@ -273,7 +285,7 @@ char ** parse_seperator(char *line) {
 		tokens = (char **)realloc(tokens, (i+1) * sizeof(char *));
 		tokens[i] = (char *)malloc(sizeof(char));
 		strcpy(tokens[i++],atoken);
-		
+		spCnt++;
 		atoken=strtok(NULL, ";");
 	}
 	
@@ -428,6 +440,26 @@ int run_pipeCmd(char *arg[]) {
         return 0;
 }
 
+int run_spCmd(char *arg[]) {
+	int i, pid;
+	char **arglist;
+	
+	for(i=0; i<spCnt; i++) {
+		
+		switch(pid = fork()) {
+			case -1: perror("fork");
+					break;
+			case 0: arglist = parse(arg[i]);
+					execvp(arglist[0],arglist);
+					exit(0);
+					break;
+			default: waitpid(pid, NULL, 0);
+					break;
+			
+		}
+	}
+	
+}
 int run_orCmd(char *arg[]) {
         int i,pid;
         char **arglist;
