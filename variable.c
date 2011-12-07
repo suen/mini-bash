@@ -13,7 +13,7 @@ int vCnt=0;
 
 Variable ** var_add(Variable ** pool, char *var, char *val);
 int check_variable(Variable ** pool, char *var); // if exist, return value, if not null
-Variable get_variable(Variable ** pool, char *var);
+char * get_value(Variable ** pool, char *var);
 
 
 
