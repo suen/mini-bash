@@ -15,12 +15,14 @@
 #include "variable.c"
 
 void displayPrompt();
+char ** myparse(char *line);
 
 char ** parse(char *line);                      /* parse general  */
 char ** parse_pipe(char *line);                 /* parse for pipe       */
 char ** parse_or(char *line);                   /* parse for ||         */ 
 char ** parse_and(char *line);                  /* parse for &&         */
 char ** parse_var(char *line);
+char ** parse_seperator(char *line);
 
 int run_command(char *arg[]);                   /* command   */
 int run_pipeCmd(char *arg[]);                   /* run pipe command     */
@@ -38,6 +40,7 @@ void pwd_func(char *argv[]);                    /* pwd          */
 void func_exit(char *argv[]);                   /* exit         */
 void func_echo(char *argv[]);
 void func_var(char *argv[]);
+void func_export(char *argv[]);
 
 void history_run(char arg[]);                   /* history command */
 void history_display(void);                      /* history display */
@@ -53,7 +56,7 @@ struct builtcmd {
         char *cmd;
         void (*fptr)(char *arg[]);
 }builtin[7] = 
-{ {"cd", func_cd},{"pwd",pwd_func}, {"exit",func_exit}, {"var", func_var}, {"echo", func_echo},  {NULL,NULL} };
+{ {"cd", func_cd},{"pwd",pwd_func}, {"exit",func_exit}, {"var", func_var}, {"echo", func_echo}, {"export", func_export}, {NULL,NULL} };
 
 char history[100][20];                  /* history save command */
 char history_Count;                     /* history Command Count */
@@ -66,6 +69,7 @@ char **and_arglist;                     /* && parseing list     */
 int pArgCnt;                            /* pipe arg Count       */
 int andCnt;                             /* && Count             */
 int orCnt;                              /* || Count             */
+int spCnt=0;
 
 Variable ** vars=NULL;
 
@@ -117,7 +121,6 @@ int main(void)
         
                 arglist=parse(line);                    /* command paresing     */
                 
-                
                 if(andCnt >= 2){
                         if(!func_builtin(and_arglist)){
                                 run_andCmd(and_arglist);
@@ -156,9 +159,34 @@ void displayPrompt() {
 	printf("%s> ", dir); 
 }
 
-char ** parse(char *line)
+char ** parse_and(char *line) {
+	
+	char *atoken;
+	char **args=NULL;
+	
+	int i = 0;
 
-{
+	if(line==NULL) return args;
+	
+	atoken=strtok(line,"&&"); 
+	
+	while(atoken) {
+		args = (char **)realloc(args, (i+1) * sizeof(char *));
+		args[i] = (char *)malloc(sizeof(char));
+		strcpy(args[i++],atoken);
+		
+		atoken=strtok(NULL,"&&");
+		andCnt++;
+	}
+	
+	args = (char **)realloc(args, (i+1) * sizeof(char *));
+	args[i] = (char *)malloc(sizeof(char));
+	strcpy(args[i],"");
+	return args;
+
+}
+
+char ** parse(char *line) {
 // parseing     
         char *token;
         static char *arg[80];
@@ -176,63 +204,84 @@ char ** parse(char *line)
         return (char **) arg;
 }
 
-char ** parse_pipe(char *line)
-{
-//  pipe parseing ( | )
-        char *token;
-        static char *arg_pipe[80];
-        int i=0;
+char ** parse_or(char *line) {
+	
+	char *atoken;
+	char **args=NULL;
+	
+	int i = 0;
 
-        if(line==NULL)
-                return NULL;
-        token=strtok(line,"|");
-        while(token)
-        {
-                arg_pipe[i++]=token;
-                token=strtok(NULL, "|");
-                pArgCnt++;
-        }
-        arg_pipe[i]=NULL;
-        return (char **) arg_pipe;
+	if(line==NULL) return args;
+	
+	atoken=strtok(line,"||"); 
+	
+	while(atoken) {
+		args = (char **)realloc(args, (i+1) * sizeof(char *));
+		args[i] = (char *)malloc(sizeof(char));
+		strcpy(args[i++],atoken);
+		
+		atoken=strtok(NULL,"||");
+		orCnt++;
+	}
+	
+	args = (char **)realloc(args, (i+1) * sizeof(char *));
+	args[i] = (char *)malloc(sizeof(char));
+	strcpy(args[i],"");
+	return args;
+
 }
 
-char ** parse_or(char *line)
-{
-// parseing ( || )
-        char *token;
-        static char *arg_or[80];
-        int i=0;
+ 
+char ** parse_pipe(char *line) {
+	char *atoken;
+	char **args=NULL;
+	
+	int i = 0;
 
-        if(line==NULL)
-                return NULL;
-        token=strtok(line,"||");
-        while(token)
-        {
-                arg_or[i++]=token;
-                token=strtok(NULL, "||");
-                orCnt++;
-        }
-        arg_or[i]=NULL;
-        return (char **) arg_or;
+	if(line==NULL) return args;
+	
+	atoken=strtok(line,"|"); 
+	
+	while(atoken) {
+		args = (char **)realloc(args, (i+1) * sizeof(char *));
+		args[i] = (char *)malloc(sizeof(char));
+		strcpy(args[i++],atoken);
+		
+		atoken=strtok(NULL,"|");
+		pArgCnt++;
+	}
+	
+	args = (char **)realloc(args, (i+1) * sizeof(char *));
+	args[i] = (char *)malloc(sizeof(char));
+	strcpy(args[i],"");
+	return args;
 }
-        
-char ** parse_and(char *line) {
-// parseing     ( && )
-        char *token;
-        static char *arg_and[80];
-        int i=0;
 
-        if(line==NULL)
-                return NULL;
-        token=strtok(line,"&&");
-        while(token)
-        {
-                arg_and[i++]=token;
-                token=strtok(NULL, "&&");
-                andCnt++;
-        }
-        arg_and[i]=NULL;
-        return (char **) arg_and;
+
+char ** parse_seperator(char *line) {
+
+	char *atoken;
+	char **tokens=NULL;
+	
+	int i = 0;
+
+	if(line==NULL) return tokens;
+	
+	atoken=strtok(line,";");
+	
+	while(atoken) {
+		tokens = (char **)realloc(tokens, (i+1) * sizeof(char *));
+		tokens[i] = (char *)malloc(sizeof(char));
+		strcpy(tokens[i++],atoken);
+		
+		atoken=strtok(NULL, ";");
+	}
+	
+	tokens = (char **)realloc(tokens, (i+1) * sizeof(char *));
+	tokens[i] = (char *)malloc(sizeof(char));
+	strcpy(tokens[i],"");
+	return tokens;
+
 }
 
 char ** parse_var(char *line) {
@@ -265,8 +314,7 @@ char ** parse_var(char *line) {
 
 
 
-int run_command(char *arg[])
-{
+int run_command(char *arg[]) {
         int pid;
         int back_flag = 0;
         int pfd[2], pipe_pos;
@@ -331,8 +379,7 @@ int run_command(char *arg[])
         return 0;
 }
 
-int run_pipeCmd(char *arg[]) 
-{
+int run_pipeCmd(char *arg[]) {
         int i,pid;
         char **arglist;
         char **arglist2;
@@ -381,8 +428,7 @@ int run_pipeCmd(char *arg[])
         return 0;
 }
 
-int run_orCmd(char *arg[])
-{
+int run_orCmd(char *arg[]) {
         int i,pid;
         char **arglist;
         int pfd[2];
@@ -422,8 +468,7 @@ int run_orCmd(char *arg[])
         return 0;
 }
 
-int run_andCmd(char *arg[])
-{
+int run_andCmd(char *arg[]) {
         int i,pid,status = 0;
         char **arglist;
                 
@@ -466,10 +511,7 @@ int run_andCmd(char *arg[])
 
 int set_var(char *var, char *val) {
 	vars = var_add(vars, var, val);
-	int i;
-	for(i=0; i<vCnt; i++) {
-		printf("%s : %s\n", vars[i]->var, vars[i]->val);
-	}	
+	
 	return 0;
 }
 
@@ -489,8 +531,7 @@ int variables_display() {
 
 // return value : 0 -- no redirect
 //              : 1 -- redirect 
-void redirect_in(char *arg[])
-{
+void redirect_in(char *arg[]) {
 // redirectin(<) check
 
         int i,fd;
@@ -513,8 +554,7 @@ void redirect_in(char *arg[])
 
 }
 
-void redirect_out(char *arg[])
-{
+void redirect_out(char *arg[]) {
 // redirectout(>) check 
 
         int i, fd;
@@ -537,8 +577,7 @@ void redirect_out(char *arg[])
         }
 }
 
-void redirect_out_append(char *arg[])
-{
+void redirect_out_append(char *arg[]) {
 // redirectout(>>) check 
 
         int i, fd;
@@ -561,8 +600,7 @@ void redirect_out_append(char *arg[])
         }
 }
 
-int func_builtin(char *arg[])
-{
+int func_builtin(char *arg[]) {
 // builtin Command
         int i;
         for(i = 0; builtin[i].cmd ; i++)
@@ -576,8 +614,7 @@ int func_builtin(char *arg[])
 }
 
 
-void func_cd(char *arg[]) 
-{
+void func_cd(char *arg[]) {
 // change dirtory
         char* homedir;
         char path[1024];
@@ -604,17 +641,22 @@ void func_cd(char *arg[])
         }
 }
 
-void pwd_func(char *arg[])
-{
+void pwd_func(char *arg[]) {
 // pwd
         char path[1024];
         getcwd(path,1023);
         printf("%s\n",path);
 }
 
-void func_exit(char *arg[])
-{
+void func_exit(char *arg[]) {
         exit(0);
+}
+
+void func_export(char *argv[]) {
+	if(check_var(argv[1])>0) {
+		printf("need to export variables\n");
+	} else
+	printf("just a normal variable\n");
 }
 
 
@@ -644,8 +686,7 @@ int check_var(char *line) {
 }
 
 
-void history_run(char arg[])
-{
+void history_run(char arg[]) {
 // history cmmand run
         int num;
         int i;
@@ -680,8 +721,7 @@ void history_run(char arg[])
         }
 }
 
-void history_display(void)
-{
+void history_display(void) {
 // history Display
         int i = 0;
         
@@ -692,8 +732,7 @@ void history_display(void)
         }
 }
 
-void set_history(char arg[])
-{
+void set_history(char arg[]) {
 // history command save
         int i = 0;
         
@@ -705,8 +744,7 @@ void set_history(char arg[])
         history_Count++;
 }
 
-int check_background(char *arg[])
-{
+int check_background(char *arg[]) {
 //Background(&)
         int i;
         for(i=0;arg[i];i++);
@@ -718,8 +756,7 @@ int check_background(char *arg[])
         return 0;
 }
 
-int check_pipe(char *arg[])
-{
+int check_pipe(char *arg[]) {
 //  pipe(|) check
         int i;
         for(i=0;arg[i];i++)
