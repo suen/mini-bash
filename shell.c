@@ -12,69 +12,87 @@
 #include <ctype.h>
 #include <dirent.h>
 
-#include "variable.c"
+typedef struct {
+	char *var;
+	char *val;
+} Variable;
 
-void displayPrompt();
-char ** myparse(char *line);
 
-char ** parse(char *line);                      /* parse general  */
+void displayPrompt();							/* display the current working directory as prompt */
+char ** parse(char *line);                      /* parse for the command to run  */
 char ** parse_pipe(char *line);                 /* parse for pipe       */
-char ** parse_or(char *line);                   /* parse for ||         */ 
-char ** parse_and(char *line);                  /* parse for &&         */
-char ** parse_var(char *line);
-char ** parse_seperator(char *line);
+char ** parse_or(char *line);                   /* parse for || operator    */ 
+char ** parse_and(char *line);                  /* parse for && operator         */
+char ** parse_var(char *line);					/* parse for variables */
+char ** parse_seperator(char *line);			/* parse for seperator */
 
-int run_command(char *arg[]);                   /* command   */
+int run_command(char *arg[]);                   /* run command in general   */
 int run_pipeCmd(char *arg[]);                   /* run pipe command     */
-int run_spCmd(char *arg[]);
+int run_spCmd(char *arg[]);						/* run ; command */
 int run_orCmd(char *arg[]);                     /* run || command       */
 int run_andCmd(char *arg[]);                    /* run && command       */
 
 
 void redirect_in(char *arg[]);                  /* redirection "<" */
 void redirect_out(char *arg[]);                 /* redirection ">" */
-void redirect_out_append(char *arg[]);             /* redirection ">>" */
+void redirect_out_append(char *arg[]);          /* redirection ">>" */
 
-int func_builtin(char *arg[]);                  /* cd, pwd , exit Command */
-void func_cd(char *arg[]);                      /* change dirctory */
+int func_builtin(char *arg[]);                  /* execute the built-in command.. invokes functions accordingly*/
+void func_cd(char *arg[]);                      /* change directory */
 void pwd_func(char *argv[]);                    /* pwd          */
 void func_exit(char *argv[]);                   /* exit         */
-void func_echo(char *argv[]);
-void func_var(char *argv[]);
-void func_export(char *argv[]);
+void func_echo(char *argv[]);					/* function echo */
+void func_var(char *argv[]);					/* variable setting */
+void func_export(char *argv[]);					/*function for exporting the global variable */
 
-void history_run(char arg[]);                   /* history command */
-void history_display(void);                      /* history display */
-void set_history(char arg[]);                   /* history command save */
+void history_run(char arg[]);                   /* runs commands from history */
+void history_display(void);                     /* display history */
+void set_history(char arg[]);                   /* saves history command */
 
-int check_background(char *arg[]);                     /* &            */
-int check_pipe(char *arg[]);                    /* | check      */
-int check_var(char *line);
+int check_background(char *arg[]);               /* check for & */
+int check_pipe(char *arg[]);                    /* check for |  */
+int check_var(char *line);						/* check for = */
 
-void cycle();
 
-struct builtcmd {
+Variable ** var_add(Variable ** pool, char *var, char *val); /* Adds variable to the array */
+int has_variable(Variable ** pool, char *var); /* if exist, return value, if not null */
+char * get_value(Variable ** pool, char *var); /* returns the value of var from the array */
+
+
+/* struct for built-in functions */
+struct builtincmd {
         char *cmd;
         void (*fptr)(char *arg[]);
-}builtin[7] = 
-{ {"cd", func_cd},{"pwd",pwd_func}, {"exit",func_exit}, {"var", func_var}, {"echo", func_echo}, {"export", func_export}, {NULL,NULL} };
+}builtin[7] = { {"cd", func_cd},{"pwd",pwd_func}, 
+				{"exit",func_exit}, {"var", func_var}, 
+				{"echo", func_echo}, {"export", func_export}, 
+				{NULL,NULL} };
+
 
 char history[100][20];                  /* history save command */
 char history_Count;                     /* history Command Count */
 char env[100][100];                     /*                      */
-char temp_homedir[1024];                /* Temp Home dirtoary */
-extern char **environ;
-char **pipe_arglist;                    /* pipe parseing list   */
-char **or_arglist;                      /* || parseing list     */
-char **and_arglist;                     /* && parseing list     */
-char **sp_arglist;
-int pArgCnt;                            /* pipe arg Count       */
-int andCnt;                             /* && Count             */
-int orCnt;                              /* || Count             */
-int spCnt;
+char temp_homedir[1024];                /* Temp Home directory */
+char **pipe_arglist;                    /* pipe argument list   */
+char **or_arglist;                      /* || argument list     */
+char **and_arglist;                     /* && argument list    */
+char **sp_arglist;						/* seperator ';' list */
+int pArgCnt;                            /* pipe arg Counter       */
+int andCnt;                             /* && Counter             */
+int orCnt;                              /* || Counter             */
+int spCnt;								/* ; counter */
+int vCnt=0;
+Variable ** vars=NULL;					/* for storing the variables of type "variable" */
 
-Variable ** vars=NULL;
 
+/*
+ * The function main displays the prompt, seeks for input, 
+ * then runs parse (4 parses for ;, &&, || and command) 
+ * then executes the arguments accordingly..
+ * at last it sets the counters to null.
+ * It runs in a loop unless the 'exit' is encountered.
+ * 
+ * */
 int main(void)
 {
         char line[256];                 /* User Input Save array */
@@ -164,11 +182,24 @@ int main(void)
         }       
 }
 
+/*
+ * DisplayPrompt just gets the current workind directory
+ * and display as a prompt.
+ * 
+ * */
+
 void displayPrompt() {
 	char dir[1024];
 	getcwd(dir, 1024);
 	printf("%s> ", dir); 
 }
+
+/*
+ * The parse_and takes in a string of character.. it looks for '&&' 
+ * and divides the strings into token, which it stores in the array
+ * declared dynamically. It returns the resulting array as return value.
+ * 
+ * */
 
 char ** parse_and(char *line) {
 	
@@ -197,6 +228,13 @@ char ** parse_and(char *line) {
 
 }
 
+/*
+ * The parse takes in a string of character.. it looks for a space, \t, or \n  
+ * and accordingly divides the strings into token, which it stores in an array
+ * declared dynamically. It returns the resulting array as return value.
+ * 
+ * */
+
 char ** parse(char *line) {
 // parseing     
         char *token;
@@ -214,6 +252,13 @@ char ** parse(char *line) {
         arg[i]=NULL;
         return (char **) arg;
 }
+
+/*
+ * The parse_or takes in a string of character.. it looks for '||' 
+ * and divides the strings into token, which it stores in an array
+ * declared dynamically. It returns the resulting array as return value.
+ * 
+ * */
 
 char ** parse_or(char *line) {
 	
@@ -242,6 +287,12 @@ char ** parse_or(char *line) {
 
 }
 
+/*
+ * The parse_pipe takes in a string of character.. it looks for '|' 
+ * and divides the strings into token, which it stores in an array
+ * declared dynamically. It returns the resulting array as return value.
+ * 
+ * */
  
 char ** parse_pipe(char *line) {
 	char *atoken;
@@ -267,6 +318,13 @@ char ** parse_pipe(char *line) {
 	strcpy(args[i],"");
 	return args;
 }
+
+/*
+ * The parse_and takes in a string of character.. it looks for ';' 
+ * and divides the strings into token, which it stores in an array
+ * declared dynamically. It returns the resulting array as return value.
+ * 
+ * */
 
 
 char ** parse_seperator(char *line) {
@@ -295,6 +353,15 @@ char ** parse_seperator(char *line) {
 	return tokens;
 
 }
+
+/*
+ * The parse_and takes in a string of character.. it looks for '=' 
+ * and divides the strings into token, which it stores in the array
+ * declared dynamically. It is assumed that the first token found would
+ * be the variable and the token thereafter would be its value..
+ * The resulting array is returned as return value.
+ * 
+ * */
 
 char ** parse_var(char *line) {
 
@@ -325,6 +392,12 @@ char ** parse_var(char *line) {
 }       
 
 
+/*
+ * run_command checks takes in an array of string, check for output 
+ * and input redirection (<, > , >>), then runs the command in a child 
+ * process.
+ * 
+ * */
 
 int run_command(char *arg[]) {
         int pid;
@@ -391,6 +464,12 @@ int run_command(char *arg[]) {
         return 0;
 }
 
+/*
+ * it takes in an array of arguments and runs the commands
+ * writing to pipe and reading from pipe.
+ * 
+ * */
+
 int run_pipeCmd(char *arg[]) {
         int i,pid;
         char **arglist;
@@ -440,6 +519,11 @@ int run_pipeCmd(char *arg[]) {
         return 0;
 }
 
+/*
+ * run_spCmd takens in array of string and execute run_command in a child process
+ * for each string in the array. 
+ * */
+
 int run_spCmd(char *arg[]) {
 	int i, pid;
 	char **arglist;
@@ -450,7 +534,7 @@ int run_spCmd(char *arg[]) {
 			case -1: perror("fork");
 					break;
 			case 0: arglist = parse(arg[i]);
-					execvp(arglist[0],arglist);
+					run_command(arglist);
 					exit(0);
 					break;
 			default: waitpid(pid, NULL, 0);
@@ -460,17 +544,21 @@ int run_spCmd(char *arg[]) {
 	}
 	
 }
+
+/*
+ * Runs if either of the arguments is true.
+ * 
+ * */
+
 int run_orCmd(char *arg[]) {
         int i,pid;
         char **arglist;
-        int pfd[2];
         
         if((pid = fork()) == 0)
         {
                 
                 for(i = 0; i < orCnt;i++)
                 {
-                        pipe(pfd);
                 
                         switch(pid = fork())
                         {
@@ -499,6 +587,10 @@ int run_orCmd(char *arg[]) {
         
         return 0;
 }
+
+/*
+ * Runs only if both of the arguments in array is true.
+ * */
 
 int run_andCmd(char *arg[]) {
         int i,pid,status = 0;
@@ -541,11 +633,18 @@ int run_andCmd(char *arg[]) {
         return 0;
 }
 
+/*
+ * Adds the variable to the Variable array
+ * 
+ * */
 int set_var(char *var, char *val) {
 	vars = var_add(vars, var, val);
 	
 	return 0;
 }
+
+/* Displays the list of variables 
+ * */
 
 int variables_display() {
 	if(vars==NULL) {
@@ -561,10 +660,12 @@ int variables_display() {
 
 
 
-// return value : 0 -- no redirect
-//              : 1 -- redirect 
+/* Checks for '<', if exists, opens the file. The input will be
+ * taken from the file.
+ * 
+ * */
 void redirect_in(char *arg[]) {
-// redirectin(<) check
+
 
         int i,fd;
         for(i = 0; arg[i]; i++)
@@ -586,8 +687,12 @@ void redirect_in(char *arg[]) {
 
 }
 
+/* Checks for '>', if exists, opens the file. If file exists, the 
+ * content is overwritten. The output will be redirected to the
+ * file.   
+ * 
+ * */
 void redirect_out(char *arg[]) {
-// redirectout(>) check 
 
         int i, fd;
         
@@ -609,8 +714,13 @@ void redirect_out(char *arg[]) {
         }
 }
 
+/* Checks for '>>', if exists, opens the file. If file exists, the 
+ * content is appended. The output will be redirected to the
+ * file.   
+ * 
+ * */
+
 void redirect_out_append(char *arg[]) {
-// redirectout(>>) check 
 
         int i, fd;
         
@@ -632,8 +742,12 @@ void redirect_out_append(char *arg[]) {
         }
 }
 
+/*
+ * It checks if the arguments passed in are one of the builtin
+ * commands and invokes the implementing function accordingly
+ * */
 int func_builtin(char *arg[]) {
-// builtin Command
+
         int i;
         for(i = 0; builtin[i].cmd ; i++)
         {
@@ -645,9 +759,11 @@ int func_builtin(char *arg[]) {
         return 0;       
 }
 
-
+/*
+ * The function implementing built-in command cd. 
+ * */
 void func_cd(char *arg[]) {
-// change dirtory
+
         char* homedir;
         char path[1024];
 
@@ -673,17 +789,27 @@ void func_cd(char *arg[]) {
         }
 }
 
+/*
+ * The function implementing built-in command pwd. 
+ * */
+
 void pwd_func(char *arg[]) {
-// pwd
         char path[1024];
         getcwd(path,1023);
         printf("%s\n",path);
 }
 
+/*
+ * It implements built-in command exit. 
+ * */
+
 void func_exit(char *arg[]) {
         exit(0);
 }
 
+/*
+ * It implements built-in command export.  
+ * */
 void func_export(char *argv[]) {
 	
 	char ** env;
@@ -703,6 +829,9 @@ void func_export(char *argv[]) {
 }
 
 
+/*
+ * It implements built-in command echo. 
+ * */
 void func_echo(char *argv[]) {
 	
 	char *value = get_value(vars, argv[1]);
@@ -713,6 +842,11 @@ void func_echo(char *argv[]) {
 		if(value!=NULL) printf("%s=%s\n", argv[1], value);
 	}
 }
+
+/*
+ * It implements built-in command var. It is used for variable 
+ * declaration. 
+ * */
 void func_var(char *arg[]) {
 	char ** vars;
 	if(check_var(arg[1])) {
@@ -722,6 +856,9 @@ void func_var(char *arg[]) {
 		}	
 }
 
+/*
+ * Checks if the string contains a variable expression (string=string)
+ * */
 int check_var(char *line) {
 	int i=0, count=0;
 	
@@ -731,9 +868,12 @@ int check_var(char *line) {
 	return count;
 }
 
-
+/*
+ * Takes in argument of form !integer, where the integer is the
+ * history number. It executes the command stored in history 
+ * denoted by the integer.
+ * */
 void history_run(char arg[]) {
-// history cmmand run
         int num;
         int i;
         char temp[80];
@@ -744,8 +884,7 @@ void history_run(char arg[]) {
         
         tmp = strtok(tmp,"!");          
 
-        if(isalpha(arg[1]) != 0)   // Âü°í 3¹ø 
-        {
+        if(isalpha(arg[1]) != 0)  {
                 for(i=history_Count; i > 0; i--)
                 {
                         if(strstr(history[i],tmp) != NULL)
@@ -767,8 +906,10 @@ void history_run(char arg[]) {
         }
 }
 
+/*
+ * Displays history list
+ * */
 void history_display(void) {
-// history Display
         int i = 0;
         
         while(history[i][0] != '\0')
@@ -778,8 +919,11 @@ void history_display(void) {
         }
 }
 
+/*
+ * It saves the command to the history array.
+ * */
 void set_history(char arg[]) {
-// history command save
+
         int i = 0;
         
         while(history[i][0] != '\0')
@@ -790,8 +934,11 @@ void set_history(char arg[]) {
         history_Count++;
 }
 
+
+/*check for '&' 
+ * 
+ * */
 int check_background(char *arg[]) {
-//Background(&)
         int i;
         for(i=0;arg[i];i++);
         
@@ -802,8 +949,10 @@ int check_background(char *arg[]) {
         return 0;
 }
 
+/* check for pipe '|'
+ * */
 int check_pipe(char *arg[]) {
-//  pipe(|) check
+
         int i;
         for(i=0;arg[i];i++)
         {
@@ -813,4 +962,64 @@ int check_pipe(char *arg[]) {
                 }       
         }
         return 0;
+}
+
+/* checks if the given 'var' exists in Variable array or not
+ * */
+int has_variable(Variable ** pool, char *var) {
+	int i=0;
+	
+	while(i<vCnt) {
+		if(strcmp(pool[i++]->var, var)==0) return --i;
+	}
+	
+	
+	return -1;
+}
+
+/* Returns the value of 'var' from the Variable array
+ * Pre-condition: 'var' exists in the Variable.
+ * */
+char * get_value(Variable ** pool, char *var) {
+	int i=0;
+	
+	while(i<vCnt) {
+		if(strcmp(pool[i]->var, var)==0) return pool[i]->val;
+		i++;
+	}
+	
+	
+	return NULL;
+	
+}
+
+/*
+ * Add 'var' and 'val' to the Variable array. If 'var' exists in 
+ * the array, it overwrites its value, if not a new entry is made
+ * */
+Variable ** var_add(Variable ** pool, char *var, char *val) {
+	
+	if(pool==NULL) {
+		pool = (Variable **)realloc(pool,  sizeof(Variable *));
+		pool[0] = (Variable *)malloc(sizeof(Variable));
+		
+		pool[0]->var = var;
+		pool[0]->val = val;
+		vCnt++;
+		return pool;
+	} 
+	
+	int pos = has_variable(pool, var);
+	if(pos!=-1) {
+		pool[pos]->val = val;
+		return pool;
+	}
+	
+	pool = (Variable **)realloc(pool, vCnt * sizeof(Variable *));
+	pool[vCnt] = (Variable *)malloc(sizeof(Variable));
+	
+	pool[vCnt]->var = var;
+	pool[vCnt]->val = val;
+	vCnt++;
+	return pool;
 }
