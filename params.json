@@ -1,0 +1,1 @@
+{"name":"Mini-bash","tagline":"It's a miniature ","body":"### Mini-Bash\r\nMini-Bash is an attempt to code a shell for linux.\r\n\r\nTo clone the repo\r\n```\r\n$ git clone git@github.com:/suen/mini-bash\r\n$ cd mini-bash\r\n$ make\r\n```\r\n\r\n","google":"","note":"Don't delete this file! It's used internally to help with page regeneration."}
